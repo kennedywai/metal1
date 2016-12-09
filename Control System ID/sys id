@@ -1,0 +1,10 @@
+這是我寫的系統鑑別用的 sketch, 只是從 PC 端發出一個電壓命令 (step command),
+然後回報 命令 & 轉速 給 PC
+
+PC端要跑 matlab simulink. 把圖畫出來, 
+
+假設馬達是近似一階系統  F(s) = a / (Ts + 1)
+有了圖 就可以鑑別出 a & T
+
+這樣就可以根據 gain margin & phase margin 得到最佳的 Kp & Ki.
+
