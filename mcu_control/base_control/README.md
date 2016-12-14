@@ -61,7 +61,7 @@
      $ rostopic pub /cmd_wheel_angularVel andbot/WheelCmd "speed1: 2.0 speed2: 2.0 driverstate: true" -r 100
      $ rostopic echo feedback_wheel_angularVel
       * if "feedback_wheel_angularVel" topic output is close to "cmd_wheel_angularVel," rosserial and motor control board is working. (speed1 is for "left wheel," speed2 is "right wheel.")
-     $ rostopic pub /cmd_wheel_angularVel andbot/WheelCmd "speed1: 0.0 speed2: 0.0 driverstate: true" -r 100
+     $ rostopic pub /cmd_wheel_angularVel andbot/WheelCmd "speed1: 0.0 speed2: 0.0 driverstate: true"
      $ Ctrl + C to stop
      $ rostopic echo /sonar (check if sonars work)
 
