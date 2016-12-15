@@ -1,6 +1,6 @@
 # andbot_arm_control
 ## Joint frame 
-![](https://github.com/oudeis/therobot/blob/master/Andbot_pkg/andbot_arm_control/joint_frame.jpeg)
+![](https://github.com/kennedywai/metal1/blob/andbot2/mcu_control/arms_control/joint_frame.jpeg)
  
 ## status
 * L0~L3 
