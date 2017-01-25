@@ -200,3 +200,18 @@ target_link_libraries(random_walk_simplest ${catkin_LIBRARIES})
 add_executable(load_map src/load_map.cpp)
 add_dependencies(load_map ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(load_map ${catkin_LIBRARIES})
+
+## Declare a C++ executable
+add_executable(random_walk_smoothgoal src/random_walk_smoothgoal.cpp)
+add_dependencies(random_walk_smoothgoal ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(random_walk_smoothgoal ${catkin_LIBRARIES})
+
+## Declare a C++ executable
+add_executable(robot_pose_pub src/robot_pose_pub.cpp)
+add_dependencies(robot_pose_pub ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(robot_pose_pub ${catkin_LIBRARIES})
+
+## Declare a C++ executable
+add_executable(rplidar_location src/rplidar_location.cpp)
+add_dependencies(rplidar_location ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(rplidar_location ${catkin_LIBRARIES})

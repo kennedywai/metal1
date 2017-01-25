@@ -19,8 +19,7 @@ bool requestMap(ros::NodeHandle &nh);
 void readMap(const nav_msgs::OccupancyGrid& msg);
 void printGridToFile();
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv){
     ros::init(argc, argv, "load_map");
     ros::NodeHandle nh;
 
@@ -31,29 +30,28 @@ int main(int argc, char **argv)
     return 0;
 }
 	
-bool requestMap(ros::NodeHandle &nh) {
+bool requestMap(ros::NodeHandle &nh){
     nav_msgs::GetMap::Request req;
     nav_msgs::GetMap::Response res;
 
-    while (!ros::service::waitForService("static_map", ros::Duration(3.0))) {
+    while (!ros::service::waitForService("static_map", ros::Duration(3.0))){
         ROS_INFO("Waiting for service static_map to become available");
     }
 
     ROS_INFO("Requesting the map...");
     ros::ServiceClient mapClient = nh.serviceClient<nav_msgs::GetMap>("static_map");
 
-    if (mapClient.call(req, res)) {
+    if (mapClient.call(req, res)){
         readMap(res.map);
         return true;
-    } else {
+    } else{
         ROS_ERROR("Failed to call map service");
         return false;
     }
 }
 
-void readMap(const nav_msgs::OccupancyGrid& map) {
-    ROS_INFO("Received a %d X %d map @ %.3f m/px\n", map.info.width,
-            map.info.height, map.info.resolution);
+void readMap(const nav_msgs::OccupancyGrid& map){
+    ROS_INFO("Received a %d X %d map @ %.3f m/px\n", map.info.width, map.info.height, map.info.resolution);
 
     rows = map.info.height;
     cols = map.info.width;
@@ -62,12 +60,12 @@ void readMap(const nav_msgs::OccupancyGrid& map) {
 
     // Dynamically resize the grid
     grid.resize(rows);
-    for (int i = 0; i < rows; i++) {
+    for (int i = 0; i < rows; i++){
         grid[i].resize(cols);
     }
 
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
+    for (int i = 0; i < rows; i++){
+        for (int j = 0; j < cols; j++){
             if (map.data[currCell] == 0) // unoccupied cell
                 grid[i][j] = false;
             else
@@ -75,14 +73,27 @@ void readMap(const nav_msgs::OccupancyGrid& map) {
             currCell++;
         }
     }
+
+    /*
+
+	if(grid[goal_cell_y][goal_cell_x]){
+		ROS_INFO("TRUE");
+		return true;
+	}
+	else {
+		ROS_INFO("TRUE");
+		return false;
+	}
+    */
 }
 
-void printGridToFile() {
+void printGridToFile(){
     ofstream gridFile;
+    // file location:/home/kennedywai/catkin_ws/devel/lib/random_walk
     gridFile.open("grid.txt");
   
-    for (int i = grid.size() - 1; i >= 0; i--) {        
-        for (int j = 0; j < grid[0].size(); j++) {
+    for (int i = grid.size() - 1; i >= 0; i--){        
+        for (int j = 0; j < grid[0].size() - 1; j++){
 	    gridFile << (grid[i][j] ? "1" : "0");           
         }
         gridFile << endl;

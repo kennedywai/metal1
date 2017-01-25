@@ -30,16 +30,25 @@ Random Wandering
 #include <fstream>
 using namespace std;
 
+// Robot's coordinates
+struct Robot_Goal_Points{
+	int X_P;
+	int Y_P;
+};
+
 typedef actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> MoveBaseClient;
 
 #define MIN_SCAN_ANGLE_RAD -30.0/180*M_PI
 #define MAX_SCAN_ANGLE_RAD +30.0/180*M_PI
 #define MIN_ANGLE_RAD -M_PI
 #define MAX_ANGLE_RAD M_PI
+#define ORIENTATION_W_STEP 0.2
 #define MIN_RADIUS 0.4
-#define MAX_RADIUS 0.8
-#define threshold_for_costmap_ 23
+#define MAX_RADIUS 1.0
+#define threshold_for_costmap_ 25
 #define RANDOM_NUMBER_SET 40
+#define W1 0.5 // Weight for theta within the range
+#define W2 0.5 // Weight for distance
 
 // Grid map definition
 int rows;
@@ -87,8 +96,6 @@ class RandomWalk{
 	int map_free_cells_;
 	// Map X-Y Coordinates
 	float min_x, max_x, min_y, max_y;
-	// Goal set 
-	bool goal_set = false;
 	
 	// Move Base Action Server.
 	// Tell the action client that we want to spin a thread by default
@@ -100,11 +107,17 @@ class RandomWalk{
 	ros::Time start_time_;
 	
 	void setGoal();
+	void setSmoothGoal();
 	bool checkCell(int goal_cell_x, int goal_cell_y);
+	bool withinRadius(int x_p, int y_p);
+	bool withinAngle(double angle_rad_01, double angle_rad_02);
+	bool withinYawRange(double yaw_rad_01, double yaw_rad_02);
 	void readMap();
 	void printGridToFile();
 	void circularDistribution();
 	double random_double(double Min, double Max);
+	float distanceBetweenTwoPoints(float point1X, float point1Y, float point2X, float point2Y);
+	float angleBetweenTwoPointsWithFixedPoint(float point1X, float point1Y, float point2X, float point2Y, float fixedX, float fixedY);
 	
 	void odomCallback(const boost::shared_ptr<const nav_msgs::Odometry>& msg);
 	void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg);
@@ -168,9 +181,111 @@ void RandomWalk::setGoal(){
 		}
 	}
 	while(!checkCell(x, y) || (goal.target_pose.pose.position.x <= min_x) || (goal.target_pose.pose.position.x >= max_x) || (goal.target_pose.pose.position.y <= min_y) || (goal.target_pose.pose.position.y >= max_y) );
-	ROS_INFO("RandomWalk - %s - will send the robot to X:%lf Y:%lf W:%.3f", __FUNCTION__, goal.target_pose.pose.position.x, goal.target_pose.pose.position.y, goal.target_pose.pose.orientation);
+	ROS_INFO("RandomWalk - %s - will send the robot to X:%lf Y:%lf YAW:%.3f", __FUNCTION__, goal.target_pose.pose.position.x, goal.target_pose.pose.position.y, goal.target_pose.pose.orientation);
 	// Sending the goal
 	ac_.sendGoal(goal, boost::bind(&RandomWalk::goalDoneCallback, this,  _1, _2), boost::bind(&RandomWalk::goalActiveCallback, this), boost::bind(&RandomWalk::goalFeedbackCallback, this, _1));
+	//ac_.sendGoal(goal, boost::bind(&RandomWalk::goalDoneCallback, this,  _1, _2);
+	//ac_.sendGoal(goal);
+}
+
+void RandomWalk::setSmoothGoal(){
+	int robot_x_p = (int)(robot_pose_amcl_.pose.pose.position.x/map_.info.resolution);
+	int robot_y_p = (int)(robot_pose_amcl_.pose.pose.position.y/map_.info.resolution);
+	int x_p, y_p;
+	int radius_p = (int)(MAX_RADIUS/map_.info.resolution);
+	int random_coor_index;
+	Robot_Goal_Points random_set[RANDOM_NUMBER_SET];// Storing the robot's 
+	
+	//ROS_INFO("YAW RAD:%lf YAW DEG:%lf", yaw, yaw*180/M_PI);
+	//ROS_INFO("POSITION = X:%lf Y:%lf Z:%lf ", robot_pose_amcl_.pose.pose.position.x, robot_pose_amcl_.pose.pose.position.y, robot_pose_amcl_.pose.pose.position.z);
+	//ROS_INFO("ORIENTATION = X:%lf Y:%lf Z:%lf W:%lf", robot_pose_amcl_.pose.pose.orientation.x, robot_pose_amcl_.pose.pose.orientation.y,robot_pose_amcl_.pose.pose.orientation.z, robot_pose_amcl_.pose.pose.orientation.w);
+
+	do{
+		// Generate a random points set within the radius of the robot
+		for(int k = 0; k < RANDOM_NUMBER_SET; k++){
+			random_set[k].X_P = (rand()%(2*radius_p)) + (robot_x_p - radius_p);
+			random_set[k].Y_P = (rand()%(2*radius_p)) + (robot_y_p - radius_p);
+			//ROS_INFO("Random Set Pts: X:%lf Y:%lf ", (random_set[k].X_P)*map_.info.resolution, (random_set[k].Y_P)*map_.info.resolution);
+		}
+
+		random_coor_index = rand()%RANDOM_NUMBER_SET;
+
+		// Setting goal
+		goal.target_pose.header.frame_id = "map";
+		goal.target_pose.header.stamp = ros::Time::now();
+		goal.target_pose.pose.position.x = (random_set[random_coor_index].X_P) * map_.info.resolution;
+		goal.target_pose.pose.position.y = (random_set[random_coor_index].Y_P) * map_.info.resolution;
+		goal.target_pose.pose.orientation = tf::createQuaternionMsgFromYaw(random_double(robot_pose_amcl_.pose.pose.orientation.w - ORIENTATION_W_STEP, robot_pose_amcl_.pose.pose.orientation.w + ORIENTATION_W_STEP));
+		//goal.target_pose.pose.orientation = tf::createQuaternionMsgFromYaw(goal.target_pose.pose.orientation);
+		ROS_INFO("DISTANCE BETWEEN ROBOT AND THE GOAL:%lf", distanceBetweenTwoPoints(robot_pose_amcl_.pose.pose.position.x, robot_pose_amcl_.pose.pose.position.y, goal.target_pose.pose.position.x, goal.target_pose.pose.position.y));
+
+		x_p =(int)(goal.target_pose.pose.position.x/map_.info.resolution);
+		y_p =(int)(goal.target_pose.pose.position.y/map_.info.resolution);
+		if(!n_.ok()){
+			ROS_INFO("RandomWalk - %s - Exiting...", __FUNCTION__);
+			return;
+		}
+	}while(!checkCell(x_p, y_p) || (goal.target_pose.pose.position.x <= min_x) || (goal.target_pose.pose.position.x >= max_x) || (goal.target_pose.pose.position.y <= min_y) || (goal.target_pose.pose.position.y >= max_y) );
+
+	ROS_INFO("RandomWalk - %s - will send the robot to X:%lf Y:%lf W:%lf", __FUNCTION__, goal.target_pose.pose.position.x, goal.target_pose.pose.position.y, goal.target_pose.pose.orientation);
+	ac_.sendGoal(goal, boost::bind(&RandomWalk::goalDoneCallback, this,  _1, _2), boost::bind(&RandomWalk::goalActiveCallback, this), boost::bind(&RandomWalk::goalFeedbackCallback, this, _1));
+	/*
+	for(int i = robot_x_p - radius_p; i <= robot_x_p + radius_p; i++){
+		for(int j = robot_y_p - radius_p; j <= robot_y_p + radius_p; j++){
+			ROS_INFO("ROBOT POSITION = X:%lf Y:%lf", robot_pose_amcl_.pose.pose.position.x, robot_pose_amcl_.pose.pose.position.y);
+			ROS_INFO("Points around the robot: x:%lf y:%lf ", i*map_.info.resolution, j*map_.info.resolution);
+		}
+	}
+	*/
+	/*
+	move_base_msgs::MoveBaseGoal goal;
+	int x_p, y_p;	
+	float point_x, point_y;	
+	float robot_radius = 1.0;
+	float r, random_yaw;
+	int cir_robot = ceil(robot_radius/map_.info.resolution);	
+    rows = map_.info.height;
+    cols = map_.info.width;
+    int currCell = 0;
+	ros::Rate loop_rate(10);
+
+	do{
+		//ROS_INFO("POSITION = X:%lf Y:%lf Z:%lf ", robot_pose_amcl_.pose.pose.position.x, robot_pose_amcl_.pose.pose.position.y, robot_pose_amcl_.pose.pose.position.z);
+		//ros::spinOnce(); 
+		//loop_rate.sleep();
+		
+		goal.target_pose.header.frame_id = "map";
+		goal.target_pose.header.stamp = ros::Time::now();
+
+		goal.target_pose.pose.position.x = (robot_pose_amcl_.pose.pose.position.x - MAX_RADIUS) + r * ((robot_pose_amcl_.pose.pose.position.x + MAX_RADIUS) - (robot_pose_amcl_.pose.pose.position.x - MAX_RADIUS));
+		goal.target_pose.pose.position.y = (robot_pose_amcl_.pose.pose.position.y - MAX_RADIUS) + r * ((robot_pose_amcl_.pose.pose.position.y + MAX_RADIUS) - (robot_pose_amcl_.pose.pose.position.y - MAX_RADIUS));
+		//x = rand() % (int)(robot_pose_amcl_.pose.pose.position.x/map_.info.resolution - cir_robot) + (int)(robot_pose_amcl_.pose.pose.position.x/map_.info.resolution + cir_robot);
+		//y = rand() % (int)(robot_pose_amcl_.pose.pose.position.y/map_.info.resolution - cir_robot) + (int)(robot_pose_amcl_.pose.pose.position.x/map_.info.resolution + cir_robot);
+		x_p =(int)(goal.target_pose.pose.position.x/map_.info.resolution);
+		y_p =(int)(goal.target_pose.pose.position.y/map_.info.resolution);
+		point_x = goal.target_pose.pose.position.x;
+		point_y = goal.target_pose.pose.position.y;
+		//goal.target_pose.pose.position.x = x*map_.info.resolution;
+		//goal.target_pose.pose.position.y = y*map_.info.resolution;
+		goal.target_pose.pose.orientation = tf::createQuaternionMsgFromYaw(random_float(MIN_ANGLE_RAD, MAX_ANGLE_RAD));
+		
+		//ROS_INFO("RandomWalk - %s - x %d y %d ", __FUNCTION__, x, y);
+	    //ROS_INFO("POSITION = X:%lf Y:%lf ", point_x, point_y);
+		//ROS_INFO("RandomWalk - %s - Testing %lf %lf...", __FUNCTION__, goal.target_pose.pose.position.x, goal.target_pose.pose.position.y);
+		//ROS_INFO("roll, pitch, yaw=%1.2f  %1.2f  %1.2f", roll, pitch, yaw);
+
+		if(!n_.ok()){
+			ROS_INFO("RandomWalk - %s - Exiting...", __FUNCTION__);
+			return;
+		}
+	}
+	while(!checkSmoothCell(x_p, y_p, point_x, point_y) || (goal.target_pose.pose.position.x <= min_x) || (goal.target_pose.pose.position.x >= max_x) || (goal.target_pose.pose.position.y <= min_y) || (goal.target_pose.pose.position.y >= max_y) );
+	//while((goal.target_pose.pose.position.x <= min_x) || (goal.target_pose.pose.position.x >= max_x) || (goal.target_pose.pose.position.y <= min_y) || (goal.target_pose.pose.position.y >= max_y) );
+	ROS_INFO("RandomWalk - %s - Sending robot to %lf %lf", __FUNCTION__, goal.target_pose.pose.position.x, goal.target_pose.pose.position.y);
+	// Sending the goal 
+	//ac_.sendGoal(goal, boost::bind(&RandomWalk::goalDoneCallback, this,  _1, _2), boost::bind(&RandomWalk::goalActiveCallback, this), boost::bind(&RandomWalk::goalFeedbackCallback, this, _1));
+	*/
+
 }
 
 // Checking the cell to see if its a free cell inside the static map and the global/local costmap(required)
@@ -234,18 +349,18 @@ void RandomWalk::mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 	ROS_INFO("RandomWalk - %s - map_free_cells_:%d!", __FUNCTION__, map_free_cells_);
 	*/
 	//readMap();
-	setGoal();
+	setSmoothGoal();
 }
 
 void RandomWalk::odomCallback(const boost::shared_ptr<const nav_msgs::Odometry>& msg){
 	ROS_DEBUG("RandomWalk - %s - Got an odom msg!", __FUNCTION__);
 	
 	geometry_msgs::PoseStamped odom;
-	odom.header.frame_id = msg->header.frame_id;
-	odom.header.stamp = msg->header.stamp;
-	odom.pose.position.x = msg->pose.pose.position.x;	
-	odom.pose.position.y = msg->pose.pose.position.y;
-	odom.pose.orientation = msg->pose.pose.orientation;
+	odom.header.frame_id  =  msg->header.frame_id;
+	odom.header.stamp     =  msg->header.stamp;
+	odom.pose.position.x  =  msg->pose.pose.position.x;	
+	odom.pose.position.y  =  msg->pose.pose.position.y;
+	odom.pose.orientation =  msg->pose.pose.orientation;
 	
 	try{
 		// Transform the odom into a pose in the map frame
@@ -263,8 +378,10 @@ void RandomWalk::robotposeCallback(const geometry_msgs::PoseWithCovarianceStampe
 	tf::Quaternion q(robot_pose_amcl_.pose.pose.orientation.x, robot_pose_amcl_.pose.pose.orientation.y,robot_pose_amcl_.pose.pose.orientation.z, robot_pose_amcl_.pose.pose.orientation.w);
     tf::Matrix3x3 m(q);
     m.getRPY(roll, pitch, yaw);
-    //ROS_INFO("roll, pitch, yaw=%1.2f  %1.2f  %1.2f", roll, pitch, yaw);
+	ROS_INFO("YAW RAD:%lf YAW DEG:%lf", yaw, yaw*180/M_PI);
+    //ROS_INFO("YAW:%1.2f", yaw);
 	//ROS_INFO("POSITION = X:%lf Y:%lf Z:%lf ", robot_pose_amcl_.pose.pose.position.x, robot_pose_amcl_.pose.pose.position.y, robot_pose_amcl_.pose.pose.position.z);
+	//ROS_INFO("ORIENTATION = X:%lf Y:%lf Z:%lf W:%lf", robot_pose_amcl_.pose.pose.orientation.x, robot_pose_amcl_.pose.pose.orientation.y,robot_pose_amcl_.pose.pose.orientation.z, robot_pose_amcl_.pose.pose.orientation.w);
 	//setSmoothGoal();
 }
 
@@ -273,8 +390,7 @@ void RandomWalk::goalDoneCallback(const actionlib::SimpleClientGoalState &state,
 	//if(state.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) ;	
 	//if(state.state_ == actionlib::SimpleClientGoalState::ABORTED) ;
 	//ac_.sendGoal(goal, boost::bind(&RandomWalk::goalDoneCallback, this,  _1, _2), boost::bind(&RandomWalk::goalActiveCallback, this), boost::bind(&RandomWalk::goalFeedbackCallback, this, _1));
-	//setGoal();
-	setGoal();
+	setSmoothGoal();
 }
 
 void RandomWalk::goalActiveCallback(){
@@ -340,10 +456,23 @@ double RandomWalk::random_double(double Min, double Max){
 	float range = (Max - Min); 
     float div = RAND_MAX / range;
     return Min + (rand() / div);
-	*/
-	int r = rand()%6284 - 3142; //this produces numbers between -3142 - +3142
-	double random_num = r/1000.0; //this will create random floating point numbers between -0.2 upto //0.2
+	
+	int r = rand()%((int)(Max-Min)) + (int)Min;
+	random_num = r/1000
 	return random_num;
+	*/
+	double f = (double)rand() / RAND_MAX;
+    return Min + f * (Max - Min);
+}
+
+float RandomWalk::distanceBetweenTwoPoints(float point1X, float point1Y, float point2X, float point2Y){
+	return sqrt((point1X - point2X)*(point1X - point2X) + (point1Y - point2Y)*(point1Y - point2Y));
+}
+
+float RandomWalk::angleBetweenTwoPointsWithFixedPoint(float point1X, float point1Y, float point2X, float point2Y, float fixedX, float fixedY){
+    float angle1 = atan2(point1Y - fixedY, point1X - fixedX);
+    float angle2 = atan2(point2Y - fixedY, point2X - fixedX);
+    return angle1 - angle2; 
 }
 
 int main(int argc, char **argv){
